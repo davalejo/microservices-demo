@@ -1,0 +1,62 @@
+trigger:
+  - main  # O la rama que uses
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  buildConfiguration: 'Release'
+  sonarQubeConnection: 'SonarQubeServiceConnection'
+  sonarProjectKey: 'sock-shop'
+  sonarProjectName: 'Sock Shop'
+
+steps:
+- checkout: self
+
+# Build de todos los microservicios (ajusta si usas Maven, Gradle, npm, etc.)
+- script: |
+    for dir in $(ls -d */); do
+      if [ -f "$dir/pom.xml" ]; then
+        echo "Building $dir"
+        mvn -f $dir/pom.xml clean package -DskipTests
+      fi
+    done
+  displayName: 'Build All Microservices'
+
+# Test de todos los microservicios
+- script: |
+    for dir in $(ls -d */); do
+      if [ -f "$dir/pom.xml" ]; then
+        echo "Testing $dir"
+        mvn -f $dir/pom.xml test
+      fi
+    done
+  displayName: 'Test All Microservices'
+
+# Análisis de código estático con SonarQube (ejemplo para un microservicio)
+- task: SonarQubePrepare@5
+  inputs:
+    SonarQube: '$(sonarQubeConnection)'
+    scannerMode: 'CLI'
+    configMode: 'manual'
+    cliProjectKey: '$(sonarProjectKey)'
+    cliProjectName: '$(sonarProjectName)'
+    extraProperties: |
+      sonar.java.binaries=target/classes
+
+- script: |
+    for dir in $(ls -d */); do
+      if [ -f "$dir/pom.xml" ]; then
+        echo "SonarQube analysis for $dir"
+        mvn -f $dir/pom.xml sonar:sonar
+      fi
+    done
+  displayName: 'SonarQube Analysis for All Microservices'
+
+- task: SonarQubePublish@5
+  inputs:
+    pollingTimeoutSec: '300'
+
+# Empaquetar artefactos
+- publish: '**/target/*.jar'
+  artifact: drop
